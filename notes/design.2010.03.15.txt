@@ -1,0 +1,2161 @@
+Haxima Runtime Attributes Object System
+---------------------------------------
+Design notes 2010/03/15
+-----------------------
+
+Obj
+    Obj has an "ID" property (this is NOT a standard haxima field)
+    Obj refers to an Archetype (by ID)
+    Fields in an Obj are simply "field_keyname" => some_storage_type
+    -- If we were using C# 4.0, the value could simply be of type 'dynamic'
+    -- Upgrading the dev environment at this point would be a notable delay, alas.
+Archetype
+    Archetype has an "ID" property (this is NOT a standard haxima field)
+    Might refer to another Archetype (by ID), 
+        for purposes of introspection of the chain of "inheritance"
+        if archetype_A1 was created as a variant of archetype_A
+        (Or possibly a list of related Archetypes.  Needs more thought.)
+    Fields in an Archetype are
+        "field_keyname" => archetype_field_data_struct which holds 
+            (which_storage_type
+            default_value,
+            policy_options,
+            ...and perhaps other data)
+    
+
+C# object properties vs Haxima Obj/Archetype fields
+    ID for an Obj/Archetype is a C# property, NOT a Haxima field
+    This is because ID is ubiquitous and special purpose, with no
+    default, noauto-vivifying, etc.
+    As a not-field, we avoid the various special field behaviors
+    without corner case oddities and the like.
+
+    Most other data about a Haxima Obj/Archetype _is_ in fields,
+    however.  Basically need a definite/special reason to be _not_ in
+    a field.  The "which archetype" field for Obj _might_ be an example.
+
+"Type" as it relates to Obj/Archetype fields:
+Storage Type (C# types; defined at engine compile-time)
+Semantic Type (Haxima field types; 
+               could be defined at engine compile-time, 
+               perhaps could be created at run-time with a
+               sufficiently clever implementation)
+
+"Type" as it relates to Obj/Archetype
+    Each Obj has an associated Archetype 
+    (or perhaps null, no-archetype Obj instances might sometimes be useful)
+    That Archetype is the "type" of the Obj.
+    Archetypes are linked to other Archetypes (or null if top-level of
+    relation chain), this forms "families" of "types".
+
+    At top of the "type" heirarchy is Item, Being, etc.
+    At bottom of one of these branches are 
+    various Sword types,
+        (wpn_sword_2H, wpn_sword_2H_damaged, wpn_sword_2H_mithril, ...))
+    various NPC Being archetypes 
+        (town_guard_Glasdrin, town_guard_Glasdrin_elite, ...)
+
+    ...How about "deltas" to Archetypes/Objs within a certain family,
+    which apply certain differences relative to the base?
+    For instance, "of the Monkey", "rusted", "add_gem_socket", ...
+
+    ..."deltas" could be applied to flyweight Objs via an ordered list...
+
+Get/Set logic per Semantic Type (range checking specific to ___)
+Get/Set logic per Storage Type (range/validity checking for ___)
+
+Load/Save logic per Semantic Type 
+    (behavior upon missing/extra fields,
+    behavior upon out-of-range values, etc)
+Load/Save logic per Archetype field (policy flags)
+    (defaults to per-Semantic Type behavior,
+    policy options to auto-vivify default-valued fields in Objs,
+    and to not elide default-valued fields upon serialization, etc)
+
+Mostly using Obj/Archetype ID, rather than C# references
+
+Reference to immutable Archetypical data, as a means of avoiding
+allocating needless data;  Auto-vivify upon set{}
+
+
+---------------------------------------------------------------------------
+Problems to Avoid
+-----------------
+This is a second system.  Must avoid the perils of Second-System-Syndrome.
+
+Many elements of the design in my head are of a nature which should be
+implemented LATER, rather than in the first draft.
+
+First thing to implement is the CORE ESSENTIAL FEATURES of Obj,
+Archetype, and the "fields" system they use.  These are defined as the
+things needful to hook up the giant-sparse-map component, using
+IDs referring to Obj instances from the Obj+Archetype system as the
+map data.
+
+The medium-term goal is a demo program using:
+    Obj + Archetype and fields
+    Giant_Sparse_Map
+    TileViewPort
+This demo would illustrate all the features combined, each with at
+least some of the elaborations which have been thought up.
+
+Doing everything at once has not been a speedy or sensible approach to
+design + implementation.  Thus I seek to divide the implementation up,
+implementing one thing at a time.
+
+There are various major features, and each has lesser and greater
+degrees of elaboration possible.  In some order, I will implement the
+basic form of each feature, and implement the various elaborations
+upon each of the features.
+
+
+Proposed phases of implementation:
+----------------------------------
+1 - Large map viewed via TileViewPort using Obj + Archetype
+    1a, 1b, etc - Successively add features related to procedural
+                  (re)generation of map contents
+                  Also, features related to "scale levels" of the
+                  map, and "zoom transitions" for TileViewPort.
+
+2 - Support movement
+    Requires a Being object with "movement mode" and "base speed",
+    and "passability" fields for terrain objects.
+    Movement is associated with the passage of time, so a basic
+    tick counter should be implemented.  Time could be handled
+    seperately, but should follow implementation of movement to
+    avoid ossification of no-time.
+    2a, 2b, etc - Successively add features elaborating upon
+                  movement.  For instance, facing, variable
+                  passability/cost by direction, move_in vs
+                  move_out costs, etc.
+
+3 - Support LOS
+    Requires fields in Being and Terrain related to LOS and sight
+    range.
+    3a, 3b, etc - Degrees of visual obscurement based on LOS and
+                  lighting; this relates to the general feature
+                  "partial identification".
+
+4 - Support Pathfinding for Beings, Vehicles, missiles, etc.
+    4a, 4b, etc - Support for multi-tile Beings/Vehicles,
+                  support for movement/LOS/missiles from
+                  ship-to-shore from same, etc.
+                  The multi-tile support is a MAJOR feature, and
+                  while the basic architecture of Giant_Sparse_Map
+                  has been prepared with this in mind, some
+                  groundwork needs to be done in other phases to
+                  make sure this goes smoothly. 
+
+Less sure of the ordering of the implementation of these:
+X - Pane display of arbitrary Objects and their Fields
+    (including complex displays where you may "drill in" to
+    subcontainers or "detail view for ___" screens)
+X - Partial Identification of Objects and their Fields
+    These are clearly related to one another;
+    may be safer to implement a 1st draft of one/other, 
+    and build once both of these are better understood...
+
+X - Implementation of various Kinda-Abstract entities
+    such as "Zone", "Town Stockpile Inventory", "Faction of Beings"
+
+    It has become clear that such non-physical entities are of
+    GREAT importance to enliven the world with player / NPC
+    activities.
+    It is less clear whether any of these need be "special" in the
+    sense of being different from other Obj/Archetype entities, or
+    will need special "pane" display code, etc.
+
+
+---------------------------------------------------------------------------
+2010/03/21
+----------
+Wrestling with the C# type sytem
+
+The problem definition is
+  - Given the C# static type scheme
+  - Given the desire that a script language be able to declare 
+    at runtime, new entities containing data fields of particular
+    fundamental types (integer, string, etc) and with special handling
+    for parse/serialize and display purposes of particular _purposes_
+    for types-of-fields
+We need to be able to bind together
+  - Script language constructs specifying entity field types and values
+  - C# language constructs holding fields of various types + values,
+    with un-obfuscated syntax for value assignment & retrieval, 
+    such as
+        int from_int = 42;
+        someHaxObj["int_field].iv = from_int;
+        int to_int = someHaxObj["int_field"].iv;
+    or a similar syntax, without type-casts or other long boilerplate
+
+The previous HRAOS draft demonstrated that this sort of binding + syntax 
+could be achieved, but the internal complexity of the support classes
+was deemed inelegant.
+
+The current HRAOS draft has reduced the internal complexity to a large
+degree, based on the lessons of the previous.
+
+
+---------------------------------------------------------------------------
+2010/04/27
+----------
+- Archetype and supporting field classes complete
+- Completed support for an initial Lexer + Parser, supporting ARCHETYPE.
+
+Various things remain, such as
+- Integrate an object registrar, and syntax for present/absent ID for
+  entity declarations.
+- Some kind of support for "tags"; needs thought out.
+- More rigour and bulletproofing for the lexer
+- Provoke various parse errors, and produce really first-rate error
+  reporting for same.  I am thinking in terms of a report showing 
+  - the original script lines with context
+  - the token stream produced by that
+  - a context-specific parse complaint with a helpful diagnoses, 
+    like "looks like a right-curly-brace is missing after line 123"
+- Plenty of test script bits, forming a sort of test suite.
+  It would be a very good thing to get something "proper" test-suite-wise.
+  Waiting on this for some feedback from Tommy, etc. as to best practices.
+- Parsing is OK, serialization is upcoming.
+  I have notions of a really first-rate load-parse-run-save-edit
+  cycle, with policy-controlled canonicalization, checksum-based
+  sanity check tools, schema-change load-save fixups, etc.
+
+
+---------------------------------------------------------------------------
+2010/05/02
+----------
+Current state of things:
+- Archetype and supporting field classes complete
+- Lexer + Parser now exist, supports ARCHETYPE
+- A first draft of the Object_Registrar is integrated
+
+Whether multiple object registries are useful / warranted, and how
+"category / type" information for each should be handled, needs to be
+hashed out still...
+
+Next thing up is support for tags.
+Some decisions:
+- The notion of paring down the types of identifiers was considered.
+  I determined that (bare ID, auto-tag, manual-tag) all have definite
+  uses, but that supporting more than a single manual-tag does not.
+  - Bare ID is useful primarily in the event of a dense 2D grid of
+    objID information.  Map / stencil sections are of this/similar
+    nature, though a palette construct may be used.
+  - Auto-tag is better than bare ID, and it is useful that such be
+    available in the absence of a manual-tag.
+  - Manual-tag is best for the human reader/editor of a script, 
+    or the human user of an editing UI.  Manual-tag is not mandatory
+    however, as myriad anonymous OBJ instances may be created, for
+    instance.  In that common case, auto-tag can be used.
+  - Policy-controlled serialization will presumably use in order of:
+    preference (manual-tag, else auto-tag, bare-ID for constructs
+    specifically indicated as wanting such)
+
+- There shall be a single registry for ARCHETYPE, OBJ, SPRITE, 
+  and other entity types.
+  This avoids the possibility of confusion over OBJ-123 and SPR-123,
+  for instance.
+  - The registry thus has a (register, unregister, lookup)
+    method for generic C# 'object', as well as each fundamental type
+    (Archetype, Obj, Sprite, others).  The generic methods are mainly
+    for boot-strapping and debugging.
+    With this scheme, it should be difficult to shoot yourself in the
+    foot via storing OBJ-123 and fetching SPR-123, or similar.
+    (It may be needful to avoid manual typecasts when retrieving from
+    an 'object' field, anyways.)
+
+- The name rules for entity names (or tags) and field names shall be
+  the same, namely <bare_multi_word> := ([a-zA-Z]\w*)([-](\w+))*
+  (I was concerned about collision between names for distinct types,
+  but upon reflection, the complexity in having different name rules
+  to prevent such is not a net gain.)
+  - It might still be worthwhile to prevent assigning a manual-tag
+    with a name of a form which could collide with an auto-tag.
+    (This would mean disallowing the second word to be all-numeric.)
+
+- Case-sensitivity is not specifically desirable, however key lookup
+  by name is a common case for object/archetype fields.
+  Case-insensitive matching is a needless performance drain.
+  I might consider canonicalizing typenames/tags to uppercase,
+  or doing comparisons against ToUpper() of their values.
+
+First implementation steps will be to merge the Name_Rules.cs with the
+other lexer/parser materials, may make sense to split lexer+parser
+into seperate files?
+
+- Refactored to split the lexer and parser (sort of),
+  and to merge Name_Rules.cs
+
+- Added support for leading sign (+/-) on INT and DECIMAL
+
+One of the next steps is to add support for a valid tag anyplace in
+the grammar where an ID value can be found.
+
+- Completed support for using a tag any place where an ID value could
+  be used (except for ID=#### declarations, of course).
+
+  - Hmm, an asymmetry.  In ID and LIST_ID constructs, you can specify
+    a not-yet-referenced ID by number (no check is made), 
+    while specifying a tag which does not resolve to a valid ID is
+    rejected.
+    Presumably, a valid-ID check should be made for the numeric case.
+    TODO: Fix that.
+
+
+
+---------------------------------------------------------------------------
+2010/05/03
+----------
+- Added a check for ID-is-valid to the numeric case.
+  This necessitated updating the test script to defined all referenced
+  IDs, of course.
+
+- TODO:
+  Currently, if a field is invalid, the result can be a silently
+  skipped field, or a missing archetype.
+  Whatever the error _handling_, this should not be a silent result.
+  (Until perhaps some future time when a policy dictates such.)
+  Not sure if this is a trivial fix; hopefully can fix this before the
+  general bullet-proofing effort.
+
+Next steps:
+- Parameterize the file-to-parse, the better for test suites and such.
+  Done, need more infrastructure for unit tests though.
+  - Error handling on parse errors is poor now; 
+    perhaps arranging the exceptions would give more helpful messages...
+
+- Add serialization for ARCHETYPE.
+- Finish up Obj (and it's relation to Archetype), 
+  add it to the grammar, and otherwise complete it.
+- Add Sprite
+- Implement a script with a definition of a TERRAIN archetype,
+  containing at least a sprite ID reference.
+- Serialization for all of the above, of course.
+
+These seem to be the minimum steps pre-requisite to hooking up the
+TileViewPort control and GiantSparseMap (both of which have a number
+of steps themselves).
+
+- Implemented serialization.
+  - IMPORTANT:
+    Needs cleaup, currently is a messy mix of 
+    serialize() and ToString() at different levels.  DONE
+  - IMPORTANT: 
+    When serializing ID fields, should be policy-controlled to emit
+    them as (tag, autotag, ID) in order of preference.
+  - IMPORTANT:
+    Currently string fields are always serialized with ''.
+    Some sort of policy control for "" vs '' should exist,
+    and support for escape sequences such as \' \" \\ should exist.
+  - Some commas need snugging-up and so forth,
+    also empty {} might be condensed.
+  - Various default field widths and such for various types
+    should probably be policy-controlled.
+
+- Did the serialize() vs ToString() cleanup.
+  The serialize() method returns an often-multi-line representation in
+  the script language, while ToString() returns a short and simple
+  partial representation with distinguishing information (typically
+  tag/name and ID).
+
+- Implemented serialization of IDs as (tag/autotag/ID).
+  - Policy control over this still remains.
+    For some kinds of formatting control, it would be needful to pass
+    parameters down to low-level methods such as ToString() or the
+    like.  For instance, field widths, number of digits of precision,
+    etc.  The alternative would be to format the returned value in the
+    caller.  What is the best (most aesthetic/idiomatic) means?
+
+
+---------------------------------------------------------------------------
+2010/05/04
+----------
+While thinking about OBJ and constructor calls for same, came up with
+a tentative syntax for declaring "curried" constructors for blocks of
+objects, as seen in earlier Haxima Ghulscript dialects.
+
+One of the first uses for such a facility is actually for groups of 
+ARCHETYPE declarations, as in this example:
+
+CURRIED_THINGY 
+    (tag, plus_hit, dmg, range)
+    (some_field_with_same_value_for_all => 42
+     another_such_field => "abc"
+     yet_another => 1.1M)
+{
+    // in_arg_1, b, c, d, e, f, g, h
+    (t_sword, +0, 1d8, melee)
+    (t_bow,   +2, 1d6, 7)
+}
+
+Doubtless this initial syntax will get shredded and replaced, but the
+main thing is that "curried" style blocks of constructor calls will
+definitely be wanted.
+
+I'm planning to implement some form of this as soon as practical after
+OBJ is implemented.
+
+
+Hmmm...what to do next, prior to implementing Obj ?
+It seems like the time may have come...
+
+...implementation of Obj in progress...
+    ...some difficulties with field-auto-vivification...
+
+Had a brainstorm about defining a FieldTempNull type to work around
+the field-auto-vivification problem.  The amazing thing is, the
+solution seems to work correctly on the almost-first trial!
+
+
+---------------------------------------------------------------------------
+2010/05/06
+----------
+Found an oddity while testing ID and LIST_ID field auto-vivification,
+where someArchetype[some_field].default_value.type == ID,
+but someObj[some_field].type == INT.
+
+After some investigation, I thought that this was a result of putting
+a FieldID into an IObjField slot, whereupon it was treated as the base
+class.  This was close to, but not the actual reason.
+
+After talking with Tommy, I found that the actual reason was that
+    (FieldID inherits from FieldInt, FieldInt implements IObjField)
+does NOT imply that (FieldID implements IObjField), which is rather
+counter-intuitive as regards inheritance.
+
+As such, changing 
+    public class FieldID : FieldInt
+to
+    public class FieldID : FieldInt, IObjField
+produced the desired result.
+
+An odd thing, will have to keep it in mind for future.
+
+
+---------------------------------------------------------------------------
+2010/05/12
+----------
+Finished various details regarding the Obj implementation.
+Added an add_field() method, for instance.
+
+Posted a new stable version of HRAOS to 4shared.com with the current
+feature set.  (2010/05/12-a)
+
+Started to add parsing + serialization for Obj to the grammar.
+Paused to consider some details of the Obj preamble, which has 3
+elements (2 optional) in arbitrary order, with a comma separator.
+
+
+---------------------------------------------------------------------------
+2010/05/14
+----------
+Thinking about the preamble constructor args for Obj, and the
+equilavent for Archetype.
+
+Currently, I've got something like:
+    Archetype tag_name [ID=nnn] { [zero_or_more_fields] }
+    Obj arch=some_archetype [, tag=tagname [, ID=nnn]] { [fields] }
+
+It occurs to me however, that Archetype may in a forseeable version
+have parent_archetype info (single, or a more complex setup), 
+in which case the script constructor call for Archetype and Obj are
+quite similar, having much the same list of possible fields, 
+though differing in which fields are mandatory.
+
+The constraints thus appear to be:
+  - Archetype has a MANDATORY tag name,
+    while (parent_archetype or whatever, and ID) are optional
+  - Obj has a MANDATORY parent_archetype 
+    (or is it valid to have a no-arch Obj???)
+    while the (tag and ID) are optional
+
+What grammar expresses this best...
+
+How about:
+  - Archetype and Obj both have a preamble block within '()'
+  - Within, zero or more comma-separated elements
+  - Each element of the form <field_name> => <value>
+  - Presence of required elements (and detecting dupes)
+    is handled by a SEMANTIC check after the element parsing
+    and before the constructor call within the appropriate
+    Script_Parser.cs:parse_some_thing() method.
+
+TODO: (first thing, directly related to parse support for Obj)
+  - Write up the proper grammar for Obj
+  - LATER: Change Archetype to match
+  - Remove/change the first-draft Obj parse stuff
+  - Implement the Obj parse according to the new grammar
+  ...etc
+
+TODO: (distinct from the current effort, but related as polish details)
+  - Update Obj to support a no-archetype Obj
+  - Update Archetype to support at least a single-parent
+    parent_archetype preamble field
+    (Or wait until requirements are more clear, and support some
+    fancier multi-heirarchy-membership thing)
+  - Add a log-to-file infrastructure (likely connected to STDOUT.cs)
+    to log parse warnings and the like, and warnings of
+    deemed-unlikely combinations
+  - Implement the "policy control" mechanism, to set silent/warn/fatal
+    policies using the aforementioned logging.
+
+
+---------------------------------------------------------------------------
+2010/05/18
+----------
+Finished the OBJ parser implementation.
+All 8 types (4 scalar + 4 list) are supported, with both no-type and
+with-type field declarations.
+
+The handling of redundant / bogus syntax seems pretty passable;
+with warnings for unusual-but-technically-valid field declarations,
+and warn+discard for outright bogus declarations.
+
+One case remains which is probably not fixable, that being a
+declaration of a field not-in-archetype, which the user also intends
+to be of a derived type such as ID.  Such a declaration will always
+result in the field type defaulting to the "basic" type (ID --> INT),
+though it will warn of this.  Since a human looking at the declaration
+would not know the intent either, this seems reasonable.
+
+The "test suite" for OBJ field declarations is not exhaustive, but is
+reasonably thorough.
+
+Wow, it seems that the OBJ parser is finally done!
+Created 'HRAOS_take2.2010.05.19-a.zip'
+Uploaded that file to 
+    http://www.4shared.com/file/GbTqmM8E/HRAOS_take220100519-a.html
+
+Next up may include some OBJ polish somewhere, 
+(and double-checking that serialization is complete), 
+but the ARCHETYPE preamble refactoring is probably next.
+
+Notes on serialization:
+- When serializing a field, should check if NIA?  (Not in Archetype)
+  If so, emit type as well as value?  -- Yes, found a bug without this.
+- A policy control over serialization of IDs as (tag vs autotag vs ID)
+  would be nice, should TODO at some point.
+- Control over order of fields serialized, and option to emit blank
+  lines, would be nice.
+
+
+---------------------------------------------------------------------------
+2010/05/19
+----------
+Found a bug on round-trip parsing where fields not-in-archetype were
+serialized without their type.  Added type serialization to Obj
+fields.
+
+After this was fixed, got a parse error in the same place, which
+seemed likely to be a parsing problem.  The root cause turned out to
+be that Obj was not calling register_tag() for it's tag and autotag
+(though Archetype was), so that serialized tags which referred to an
+Obj did not resolve!  Fixed that.
+
+Hmmm, looks like methods to clean up (and unregister) defunct Obj and
+Archetype still remain to be implemented.
+
+When would be best to implement:
+- Policy control over various warning/error use/ignore matters?
+- Annotation of fields with policy info, field order, etc.
+
+Some test suite TODO:
+- Add similar wrong-field-type examples WITHOUT a type field...
+- Add duplicate same-field examples for both ARCHETYPE and OBJ
+
+TODO TODO:
+- Various TODO markers remain in various files, should gather them up
+  and attend to them, rather than letting them fester...
+
+General goal for the parser:
+- Reduce/eliminate use of exceptions for parse errors, relying rather
+  on parser backup and diagnosis via warnings / debug output for the
+  user to find & fix script errors.
+  Methinks fatal exceptions should be reserved for wrong-argument
+  method calls and the like.
+  Alternatively, the parser could _handle_ exceptions thrown, though
+  whether this makes it easier or harder to keep track of parser
+  backtracking needed is an unknown quantity ATM.
+  (This is one of the kind of issues I'd like to talk with Tommy in
+  regards to.  Also: setting up a test suite, various project setup
+  fiddling, and packaging issues and the like.)
+
+Is there anything currently more pressing than the Archetype preamble
+refactoring?  And should I go through with changing ARCHETYPE to ARCH?
+
+Packaged everything up into a new version, uploaded to 4shared.com
+    http://www.4shared.com/file/NkVAgtET/HRAOS_take220100519-b.html
+
+After consideration, the next thing to implement is clearly a new
+component, that being a Sprite + SpriteSheet API based on the earlier
+C Sprite API (with facings and animation frames).
+
+TODO:
+- Implementation of "wave sprites" may require a different approach
+- Need to look into other-than-WindowsForms means of blitting,
+  for speed and for "effects" purposes such as wave sprites,
+  and SFX such as the Haxima kernal implemented (screen shake, screen
+  flash, etc).
+
+
+---------------------------------------------------------------------------
+2010/05/20
+----------
+Starting with some combination of the code from earlier
+proof-of-concept efforts in:
+
+Tile scrolling widget (tiles, but no animation)
+    D:\Projects\C_Sharp_stuff\Virtual_Canvas.2009.09.28\WinForms_display_bitmap
+
+TileSheetStack (port + redesign of C Sprite API, tiles with animation)
+    D:\Projects\C_Sharp_stuff\CSharp_Animated_Sprites.2010.02.05\Animated_Sprites\Animated_Sprites
+
+
+---------------------------------------------------------------------------
+2010/05/23
+----------
+Meeting with Tommy to talk code.
+
+Suggested order to review classes/files:
+
+Trivial:
+    Error.cs
+    STDOUT.cs
+    Program.cs  // Largely auto-generated
+    Form1.cs    // Mostly test/demo code
+
+Fundamentals of Duck-Typing Object system:
+    Archetype.cs
+    Obj.cs
+    FieldTypes.cs
+    IArchetypeField.cs
+    IObjField.cs
+    Object_Registrar.cs
+
+Implementation of Field Types:
+    FieldInt.cs
+    FieldString.cs
+    FieldDecimal.cs
+    FieldID.cs           // Derived type
+    FieldTempNull.cs     // Of some interest, not basic to system
+    FieldListInt.cs
+    FieldListString.cs
+    FieldListDecimal.cs
+    FieldListID.cs       // Derived type
+
+Parser (currently supports ARCHETYPE and OBJ entities):
+    Script_BNF.v2-a.txt
+    Sample_Script_Text.v1.txt
+    Sample_Arch_Obj_script.v2.txt
+    Script_Lexer.cs
+    Script_Parser.cs
+    Script_Parser_ARCHETYPE.cs
+    Script_Parser_OBJ.cs
+    Script_Parser_Terminals.cs
+
+Much wrangling to ensue...
+
+Went over the classes implementing the HRAOS, then the parser, also
+somewhat upon script language entities to come.
+
+Got some info on Visual Studio project-mangling bits, such as
+post-build actions and the Solution/Project/Assembly nomenclature.
+
+Got some info on setting up trivial unit tests using NUnit.
+Installed NUnit version 2.5.5, and an example project + tests was set
+up.
+    D:\Projects\C_Sharp_stuff\whateverYouSeeFit
+
+Items TODO after:
+  - Check into license requirements for github hosting
+  - Consider carefully the notion of splitting the parser 
+    into a class for each script entity
+  - DirectX book (then C#-specific materials from web)
+  - OpenGL book (then C#-specific materials from web)
+
+Note: 
+The Archetype and Obj APIs need to have a hasField() call, 
+to test without auto-vivifying...
+
+
+---------------------------------------------------------------------------
+2010/06/02
+----------
+Coding came to a halt with an attempt to put pixels on screen, which
+has required learning the APIs for same.  Ideally, I would like to
+implement the basics of tile-viewport sprite-blitting for multiple
+graphics infrastructures, and time them for performance data.
+Whichever was fastest and with other desirable properties could be
+focused on as the "main" API then, and subsequent porting would
+benefit from the trail being blazed.
+
+I'm only looking at graphics APIs with a C# binding, as I have no
+desire to have to write my own binding or whatnot.
+
+What I need to write tile-viewport code for a graphics API is
+    - Set up the screen / window
+    - Teardown/cleanup of the screen/window
+    - Load an image file into some data structure
+    - Blit a rectangle from said image onto a destination,
+      perhaps batched up inside a begin/end construct for performance
+
+Also highly desirable are facilities to get image data back from the
+screen / "surface" for screen-shot purposes.
+
+The APIs of note which look worth investigating seem to be:
+    - DirectX (a diverse _family_ of APIs; this complicates matters)
+    - OpenGL
+    - libSDL  (uses DirectX / OpenGL underneath ???)
+    - Allegro (uses DirectX / OpenGL underneath ???)
+
+Others might be identified.  I definitely want to produce
+proof-of-concept with at least 2 APIs, the better to compare to the
+existing Windows Forms (GDI+) tile-viewport code, which alas, is quite
+sluggish in drawing.
+
+
+
+So, to that end, I decided to start with DirectX.
+
+I've been reading rather a lot of stuff regarding the DirectX family
+of Win32 graphics APIs.  They form a confusing mob.  Most of the
+documentation and tutorials out there are for C or C++, rather than
+C#, and VB / VB.NET info is also highly prominent.
+
+Various C# bindings / wrappers for DirectX exist, notably
+    Managed DirectX v1.1  (MDX)
+    XNA Studio (somewhat specialized in purpose)
+    SlimDX
+
+At the moment, the binding/wrapper I've had the most luck with is
+Direct3D, part of the DirectX 9 family.  The "Drunken Hyena" tutorials
+for C# + DirectX 9 (Direct3D) have been the most helpful; alas the one
+thing they lack is an example of load-image and blit-image.
+
+I have some hopes to find another DirectX 9 / Direct3D example which
+_does_ show load-image and blit-image; alas the various other
+materials I've examined are for other variants of the DirectX family,
+and the APIs seem to differ.  Something may come of this yet, though.
+
+
+
+After rather a _lot_ of searching for tutorials, example code, and
+actual documentation, I'm rather frustrated with the state of DirectX
+in C# for 2D graphics.
+
+There seem to be three possibly-viable paths to get something working
+with (C# + DirectX + 2D graphics).  They are:
+
+    - Managed DirectX v1.1, using DirectDraw
+      (I also considered "Direct2D", but that has proved elusive)
+      Best working example: MDX_Tutorial_2.samus_running
+      Still missing: How to set up _within_ a WinForms window
+
+    - Direct3D, with fixed camera looking on a plane,
+      to accomplish 2D graphics using a 3D library
+      Best working example: Drunken_Hyena_tutorials\6.points
+      Still missing: How to load and blit an image,
+                     How to set up _within_ a WinForms window
+
+    - DirectDraw, using DxVBLib
+      The fact that this uses a VB-derived library, the license /
+      distribution terms of which I don't know, is a definite impediment.
+      In regards to the "purity" of C#-and-not-VB however, is this
+      different in kind from other C# wrappers around DirectX?
+      Best working example: SpaceBreakOut
+
+    - SlimDX
+      This has been recently updated (latest release Feb 2010),
+      and is much-praised for cleanliness of API by various people.
+      Their website is partially borked ATM however, and example code
+      is thin on the ground.  Of the various projects in the samples
+      directory included in the SDK, about half crashed or did not
+      build, which is worrisome.
+      - Messed around with building the SampleFramework, made some
+        progress.  Still not working for the Direct2D/SimpleTriangle2D
+        example, however.
+
+    - Or finally, consider doing my own C# wrapper around DirectX
+      (presumably DirectDraw), either by hand, or using SWIG or the
+      like.  This sounds like a fair bit of effort before I can blit
+      anything, but I suppose the notion should be on the list.
+
+Getting adequate documentation on each of these has been difficult and
+unfruitful.  I am considering switching efforts to getting something
+working in SDL, OpenGL, or Allegro first, and _maybe_ going back to
+DirectX afterwards.
+
+
+---------------------------------------------------------------------------
+2010/06/03
+----------
+Reviewed the various DirectX wrappers and examples.  The MDX_tutorial
+seems closest to accomplishing what I need, but trying out a different
+approach (SDL, OpenGL, Allegro) is very tempting ATM.
+
+
+
+After additional searching, found a tutorial which demonstrates
+in C#, using Direct3D, loading an image into a Texture which is
+blitted onto a square tile (composed of a TriangleFan with 4
+vertices).  Naturally, all file links from that tutorial resolved to a
+domain name speculator parking page, sigh.
+    http://www.godpatterns.com/2005/02/stage-i-ii-tiles.html
+
+This however, is the missing functionality which the Drunken_Hyena
+tutorials lack, so I can either:
+    - Follow the (very long and chatty) tutorial step-by-step to
+      reconstruct the code, or
+    - add the texture + tile -related bits to the Drunken_Hyena tutorial
+
+Let's see how it goes...not well, initially.
+Got nothing but a blank screen, tried again starting from the
+triangles demo.  And _now_ some results are visible!
+
+
+
+Got blitting a grid of square tiles (solid or wireframe) to work.
+Putting a texture on top is the next needful thing.
+
+Did a not-immediately-needful thing next.
+Got blitting a grid of WE-grain hexagons (solid or wireframe) to work.
+
+Noted that WE-grain hexes with widths which are multiples-of-3 seem
+less grainy than the powers-of-2 sizes I've used for square tiles.
+
+Next up, loading and blitting textures onto these things...
+
+
+---------------------------------------------------------------------------
+2010/05/05
+----------
+Voila!  Finally got an image to render and display!
+
+The required incantation was of the form:
+    m_device.VertexFormat = D3D.CustomVertex.TransformedTextured.Format;
+    m_device.SetTexture(0, single_tile_texture);
+
+(And call .SetTexture(0, null) afterwards so that filled/wireframe
+rendering works, if such is wanted.)
+
+
+
+Looking into how best to set up the various tiles in a tilesheet,
+as the Texture.FromBitmap() call I've used thus far loads the entire
+file into a single texture.
+
+To aid in this, I came up with this list of relevant/useful 
+Direct3D classes and methods:
+
+// using D3D = Microsoft.DirectX.Direct3D;
+// 
+// D3D.Device
+//   .UpdateSurface(), .UpdateTexture()
+// 
+// D3D.Texture
+//   .FromBitMap(), new Texture(device, bitmap, usage, pool), .GetSurfaceLevel(level)
+//   Device.UpdateSurface(from_surface, from_rectangle, to_surface)
+// D3D.TextureLoader
+//   .FromFile(), .Save()
+// 
+// D3D.Surface
+//   .FromBitmap(device, bitmap, pool), new Surface(device, bitmap, pool)
+// D3D.SurfaceLoader
+//   .FromFile(), .Save()
+// 
+// System.Drawing.Bitmap
+//   .Clone(rectangleF, srcBitmap.pixelFormat), new Bitmap(string), .Save()
+// 
+
+The relation between Texture and Surface seems to be that 
+(?a Texture has one or more Surfaces which are composited for rendering?).
+Need to confirm this understanding...
+
+Also, some pertinent-seeming restrictions on Device.UpdateSurface():
+// The source surface must have been created with Pool.SystemMemory.
+// The destination surface must have been created with Pool.Default. 
+
+So the food chain to accomplish the desired result 
+seems to be something like:
+
+// image_file --> Bitmap --> Surface --> Texture --> rendered to screen
+
+
+
+There also exists the D3D.Sprite class, about which I am less sure of
+the best use:
+// D3D.Sprite
+//   .Draw(srcTexture, srcRectangle, center, position, color), 
+//   .Draw2D(srcTexture, srcRectangle, destRectangle, position, color), 
+//  new Sprite(device)
+
+The Sprite food chain seems to be:
+//  Texture (entire sheet?) --> Sprite (1 tile?) --> Texture (1 tile?)
+
+
+
+It still feels like I'm missing something which ought to exist, like
+one of these entities having a constructor or other method which will
+take arguments for a rectangle and another entity...
+
+    Is there a Bitmap or Surface constructor which makes one from a rectangle?
+    - How about Bitmap.Clone(rectangleF, pixelFormat) ?
+      new RectangleF(xx, yy, ww, hh)  // all parameters are float
+
+
+
+Current best notion of the needed code is:
+
+Bitmap        tile_sheet         = new Bitmap(filename);
+D3D.Surface   tile_sheet_surface = new D3D.Surface(device, tile_sheet, D3D.Pool.SystemMemory);
+D3D.Surface[] tile_surfaces = new D3D.Surface[num_tiles]();
+for (int ii = 0; ii < num_tiles; ii++)
+{
+    int xx = ii % tile_sheet_width;
+    int yy = ii / tile_sheet_width;
+    int ww = 32;
+    int hh = 32;
+    Rectangle tile_rect = new Rectangle(xx, yy, ww, hh);
+    tile_surfaces[ii] = new D3D.Surface(device, null, D3D.Pool.Default);  // is this a valid call?
+    Device.UpdateSurface(tile_sheet_surface, tile_rect, tile_surfaces[ii]);
+}
+
+
+---------------------------------------------------------------------------
+2010/06/06
+----------
+More reading on the various classes and methods.
+
+Another approach:
+    http://www.xtremedotnettalk.com/showthread.php?t=97755
+----
+If you're using Direct3D, then there may be no need to chop up the
+textures. Textured vertices have a tu/tv component which allows you to
+specify which parts of the texture to apply to the primitive. For
+example, say your image is made up of 100 frames arranged in a
+row-ordered 10x10 grid; rather than chop up the texture, make it so
+that your vertices use tu/tv values in increments of 0.1. 
+
+[0,0][0.1,0.1] would be the first 'frame', [0.1,0][0.2,0.1] would be
+the second frame, [0,0.1][0.1,0.2] would be the 11th frame, and so
+on. 
+----
+
+Hmmm...floating point division on other than power-of-2 sizes seems
+like not the right thing.  Also, the Sprite class keeps nagging at me...
+
+
+---------------------------------------------------------------------------
+2010/06/07
+----------
+Hmmm...another approach
+    Surface.LockRectangle()
+    ...alter data in locked region...
+    Surface.UnlockRectangle()
+    Device.StretchRectangle()
+
+Looking into this...
+    StretchRectangle(srcSurface, srcRectangle, destSurface, destRectangle, textureFilter)
+Seems promising...
+
+
+---------------------------------------------------------------------------
+2010/06/08
+----------
+Success blitting individual tiles from a larger texture containing a
+tilesheet via the calls:
+
+D3D.Surface to_surface = 
+    m_device.GetBackBuffer(0, 0, D3D.BackBufferType.Mono);
+m_device.StretchRectangle(tile_sheet_surf, from_rect, 
+                                          to_surface,      to_rect, 
+                                          D3D.TextureFilter.None);
+
+There is a significant bug however, in that switching between windowed
+and full-screen hangs the app.  Also, closing the app with ESC leaves
+the IDE thinking the app is still running, which may be related.
+
+The cause of this problem seems likely to be:
+    http://www.gamedev.net/community/forums/topic.asp?topic_id=312957
+----
+If a call to IDirect3DDevice9::Reset fails, the device will be placed
+in the "lost" state (as indicated by a return value of
+D3DERR_DEVICELOST from a call to
+IDirect3DDevice9::TestCooperativeLevel) unless it is already in the
+"not reset" state (as indicated by a return value of
+D3DERR_DEVICENOTRESET from a call to
+IDirect3DDevice9::TestCooperativeLevel). Refer to
+IDirect3DDevice9::TestCooperativeLevel and Lost Devices for further
+information concerning the use of IDirect3DDevice9::Reset in the
+context of lost devices. 
+
+Calling IDirect3DDevice9::Reset causes all texture memory surfaces to
+be lost, managed textures to be flushed from video memory, and all
+state information to be lost. Before calling the
+IDirect3DDevice9::Reset method for a device, an application should
+release any explicit render targets, depth stencil surfaces,
+additional swap chains, state blocks and D3DPOOL_DEFAULT resources
+associated with the device. 
+----
+Presumably, handling this in the OnDeviceLost() OnDeviceReset()
+handlers is what is wanted.  It appears that re-establishing the
+tilesheet surface (tile_sheet_surf) would be needful.
+
+
+
+Stumbled onto what seems to be a distinct document tree within MSDN,
+which has C#-specific DirectX9 documentation, with actual
+documentation text beyond the bare API details.  An example link:
+    http://msdn.microsoft.com/en-us/library/bb219683%28VS.85%29.aspx
+Compare this to the equilavent page (for the Surface class):
+    http://msdn.microsoft.com/en-us/library/bb296140%28v=VS.85%29.aspx
+
+Strange that searches upon MSDN did not stumble over this material
+before; it makes me wonder if the site is undergoing some kind of
+overhaul.  Presuming these pages were present during my earlier
+searches, however, it is unclear why they did not turn up.
+
+
+---------------------------------------------------------------------------
+2010/06/09
+----------
+Made a first attempt at setting up calls inOnDeviceLost() and
+OnReset() to re-establish the various DirectX resources (such as
+tile_sheet_surf).  This did not fix the hang.
+
+However, I notice that watching Mem Usage in Task Manager while
+repeatedly switching draw modes in the demo program shows increasing
+memory usage.  It appears that some DirectX resource is being leaked!
+
+...find what dispose/free type call is wanted, and for which resources...
+
+...then, see about getting the DirectX region into a Control, 
+   rather than an entire window...
+
+
+---------------------------------------------------------------------------
+2010/06/13
+----------
+Found additional documentation in "Beginning C# Game Programming",
+which clarifies some matters regarding Device, Texture, and Sprite.
+(No mention of Surface in that book, however.)
+
+Based on this information, I _think_ that the nature of the bugs seen
+in the triangle-demo I converted to a tile-blitting-test has to do
+with:
+  - I allocated some DirectX resources in a Pool 
+    other than Pool.Managed (which is supposed to handle de- and
+    re-allocating such when the Device is lost)
+  - I then tried to set such up manually, likely getting it wrong,
+    thus resource leaks.
+  - Not sure why the hang/crash, however.
+
+Based on the materials in Chapter 7 (Direct3D) of that book, making
+another attempt...
+
+
+---------------------------------------------------------------------------
+2010/06/14
+----------
+After wrestling with a scaling bug, I have a working sprite-blitting
+program based on the Chapter 7 materials.
+
+The bug was as follows:
+- Given an image file of dimensions 320 x 160 pixels,
+  containing 10 x 5 tiles of dimensions 32 x 32 pixels.
+
+- Load a texture with TextureLoader.FromFile(), 
+  using zero for the width and height arguments
+  (so that this method "figures them out automatically".
+
+- Drawing rectangles from the loaded texture via
+  Sprite.Draw() or Sprite.Draw2D() resulted in 
+  pixels drawn as if the texture was scaled up somewhat.
+
+- It appears that the width + height chosen by
+  TextureLoader.FromFile() was not 320 x 160,
+  resulting in the "scaling" seen.
+  Setting the arguments to width=320, height=160
+  produced the expected + correct results.
+
+More info at:
+    http://www.gamedev.net/community/forums/topic.asp?topic_id=554109
+
+    "Perhaps your texture is getting scaled to a power-of-2 size
+     when you load it? I believe that's the default behavior when
+     using TextureLoader." 
+    "The TextureLoader was loading it at a different size." 
+
+After those shenannigans, I was pleased to note that the results when
+purposefully scaling look rather nice.  Played around with scaling
+DOWN as far as 1/8 (from 32x32), and UP to 5/1, and points in between
+with both integer and fractional tile sizes.  All looked pretty good,
+though perhaps scaling UP would benefit from controlling the scaling
+algorithm, as I've seen elsewhere in the API.
+
+On a related note, the most useful overload for Draw2D is:
+    Sprite.Draw2D(src_texture, src_rect, dest_size, 
+                  rotation_center, rotation_angle, position, color)
+
+It should be noted that the Direct3D API seems to have changed
+willy-nilly from one library version to another, and there is
+reference to outstanding (and never fixed) bugs in sprite rotation and
+the like.  This sort of thing is an argument against considering
+DirectX as the "primary" API, for reasons of API stability over time.
+
+A note for future, regarding other possible bugs-to-be:
+
+In both DirectX and OpenGL, there are prominent notices regarding the
+"natural" size of textures being power-of-2 sizes, and possibly also 
+where width == height.
+
+This bug occurred because the tile sheet was not of a power-of-2 size,
+but the individual tiles are 32x32.  Other bugs might crop up with
+tiles whose native size is different, or with non-square tiles.
+
+
+---------------------------------------------------------------------------
+2010/06/15
+----------
+OK, with the proof-of-concept to blit tiles from a single texture in
+DirectX, what are the next steps?
+
+* One pre-requisite remains: 
+  - DirectX region inside a Windows.Forms control
+
+- May be useful to play around with rotation somewhat (minor)
+
+- Tested scaling somewhat, but it would be nice to control the scaling
+  algorithm, as per the various references in the DirectX API
+  documentation (minor)
+
+* Hook up this blitting method to the TileViewPort + GiantSparseMap
+  demo, to see how it performs!
+
+- Get a high-resolution timer set up, and get hard numbers on time to
+  blit an entire viewport, for both the GDI and the DirectX
+  implementations.
+
+- Afterwards, move on to OpenGL
+- Also, try SDL
+- Also, try Allegro
+
+One pre-requisite to go...
+
+Something like:
+    presentParameters.DeviceWindowHandle = pictureBox1.Handle;
+
+or:
+using D3D = Microsoft.DirectX.Direct3D;
+...
+device = new D3D.Device(0, Direct3D.DeviceType.Hardware, this.panel1, 
+                        CreateFlags.HardwareVertexProcessing, 
+                        presentParams);
+
+Tried variations on the above, without success.
+Hmmm...a couple of combinations compiled, but the DirectX materials
+did not render, might be worth looking into further...
+
+Need to check out:
+    http://www.eggheadcafe.com/community/aspnet/2/10112874/c-creating-a-directx-dev.aspx
+
+Also of note, the Direct3D documentation states that the 
+'Control render_window' argument (arg 3) of the Device constructor
+must be a top-level window. 
+
+Examined the 'D3DControls' source at some length.
+Surprisingly, the Device which is set up in the 'D3DSimpleSurface'
+class (which subclasses System.Windows.Forms.UserControl) does NOT
+set arg 3 of the Device constructor to anything unusual.
+
+As best I can figure how it works for now, the 'Camera' class uses a
+View Transform to render only to the designated area.  But that's just
+a guess for now, based on not finding any other mechanism to restrict
+the DirectX rendering to the control area.
+
+
+---------------------------------------------------------------------------
+2010/06/16
+----------
+After much wrangling, and many more MSDN pages consulted, I have a
+Windows Forms Control (based on UserControl) which defines a region
+which Direct3D will render to.
+
+There is one imperfection in this control, having to do with the
+Designer in Visual Studio.  Currently, there are 2 lines of code which
+should be commented out to use the control in the Designer (else it
+renders the region strangely in that tool), and which should be NOT
+commented for ordinary non-Designer use (else the region is initially
+over-drawn with a grey area, until repainted).
+
+Given that the Designer is a tool legendary in repute for being
+quirky, I think I can live with this imperfection + the workaround.
+
+The next step is to hook up
+  - The Direct3DRegion control
+    CSharp_DirectX_experiments\Beginning_CSharp_Game_Prog\
+        from_scratch.2010.06.13\simple_D3D_in_WinForms
+  - The texture and sprite -based calls to load a tilesheet 
+    and blit tiles
+    CSharp_DirectX_experiments\Beginning_CSharp_Game_Prog\
+        from_scratch.2010.06.13\Direct3D_tile_demo
+  - The TileViewPort logic and the underlying dense/sparse
+    map data structures
+    WinForms_display_bitmap.2009.06.23\WinForms_display_bitmap
+
+And eventually
+  - The HRAOS ObjID system (with ARCHETYPE and OBJ, and more to come)
+    which is found in
+    D:\Projects\C_Sharp_stuff\Haxima_Runtime_Attributes_Object_System\
+        HRAOS_take2.2010.03.16\HRAOS_take2.2010.03.16
+
+To fit these together nicely may require a fair bit of re-factoring on
+the older components; in particular dividing things up into different
+projects / assemblies / references / whatnot is probably desirable at
+this point.
+
+
+---------------------------------------------------------------------------
+2010/09/05 (Sun)
+----------
+Created a new directory
+    D:\Projects\C_Sharp_stuff\DirectX_tile_engine.2010.09.05
+and copied the working DirectX predecessors into it.
+    Direct3D_tile_demo
+    simple_D3D_in_WinForms
+
+Putting these two together, in the directory:
+    D:\Projects\C_Sharp_stuff\DirectX_tile_engine.2010.09.05\D3D_tile_engine
+
+Got the tile demo to animate.
+Instantiated multiple instances of the Direct3DRegion control.
+
+Ran into an odd thing where the keybinding code (ESC == exit) from the
+tile demo did not do anything in the Form1-contains-Direct3DRegion
+example.  Odd...
+
+Wrote some Perl scripts to decode various Ultima IV map data.
+May use this as reference map data at some point.
+
+
+---------------------------------------------------------------------------
+2010/09/09 (Thu)
+----------
+Finally got the tile-rendering code into the D3DRegion control demo.
+Much refactoring is ahead, but finally the pieces are together!
+
+
+---------------------------------------------------------------------------
+2010/09/10 (Fri)
+----------
+Note regarding the needed size for a Direct3DRegion control:
+
+Basic size is of course (num tiles * pixels per tile) for both width
+and height, but space must be included for tile separators (if any)
+and for the BorderStyle of the control.
+
+Tile separators space is:
+  (num pixels separation * (num tiles - 1)
+BorderStyle space is:
+  0 for BorderStyle.None
+  2 for BorderStyle.FixedSingle (1+1 for left+right, or 1+1 for top+bottom)
+  4 for BorderStyle.Fixed3D     (2+2 for left+right, or 2+2 for top+bottom)
+
+
+---------------------------------------------------------------------------
+2010/09/13 (Mon)
+----------
+After a late night (and a bugfix in the morning), got most of the
+DirectX setup and tile / grid blitting logic moved into something more
+like suitable classes.
+
+Tested blitting an animated grid at up to 33x33 at 1x scaling, with
+anim loop delays from (0, 1, 90, 400) ms.  Looks good, speed is
+excellent, and CPU usage ranges from 1..20% depending on grid size, etc.
+
+Fiddled about a bit with some Ultima VI data decoding.
+
+
+---------------------------------------------------------------------------
+2010/09/14 (Tue)
+----------
+Tried out the animated grid at
+    Scaling 0.50 grid 66x66
+    Scaling 0.25 grid 132x132
+and various points in between.  Appearance and speed are excellent,
+and the high point of CPU usage was at 69% for a no-delay 132x132 grid
+at 0.25x scaling.
+
+The TileSheet and Direct3DWidget classes seem reasonably correct now,
+what remains to be done is:
+  - A few methods need to be moved (or put into a new helper class)
+  - Some re-ordering of methods for ease of reading
+  - Test using multiple tilesheets on one Direct3DWidget
+  - Test using one tilesheet on multiple Direct3DWidgets
+
+After that, it is time to integrate this stuff with the TileViewPort
+control, and hook up the Obj+Archetype infrastructure!
+
+
+---------------------------------------------------------------------------
+2010/09/15 (Wed)
+----------
+Various refactoring and cleanup.  Looks tidy now.
+Currently no support for rotation, partial-tile scrolling, and so forth.
+Copied the current state to
+    D3D_tile_engine.2010.09.15.blit_tiles_clean
+    D3D_tile_engine.2010.09.15.blit_tiles_clean.zip
+Uploaded a ZIP to 4shared.com:
+    http://www.4shared.com/file/6FXtU-fM/D3D_tile_engine20100915blit_ti.html
+
+Tested the demo on the downstairs Vista laptop, the EXE failed to run.
+This seems to be the same problem I saw on Jason's and Alex's
+machines, and is likely some kind of compile/deploy problem.
+
+Hmmm...All of these boxes should have the .NET framework.
+Checking the project/build options...
+
+A quick look through the menus and options panes in Visual Studio does
+not show anything obvious missing.  Added the needed media file to the
+project, so that it is copied into the bin/debug and bin/release
+directories.  Tested this on the laptop, same error.
+
+Experimentation shows that .NET Hello World type applications
+(one console app, and one Windows Forms app) run fine on the Vista
+laptop.
+
+Further, running the Windows System File Checker (sfc /scannow)
+reported no damage to any files (such as the .NET materials) to
+repair.
+
+Running Windows Update to get the very latest bits .NET-wise is
+underway...
+
+One possibility is that a .NET installation does not by default have
+all of the DirectX materials, but this seems unlikely as one of the
+core purposes of the framework was to provide consistency in the
+installation environment.
+
+One clue...found a reference in the Windows Event Viewer to a value
+PEB_CORRUPTED in the event produced in the Application log when the
+tile demo exe dies.  Googling for this produced a reference to damaged
+.NET installations, but that seems not to be the problem here.
+
+One simple thing which should be tried, is to set up the tile demo to
+not use an overly-large Direct3D region (currently it opens a
+1200x1200 window).  Alas, tried this to no effect.
+
+Read much documentation regarding assemblies and the manifest.
+On the one hand, a missing / wrong version assembly (for some DirectX
+piece) seems like a plausible cause for an error which has been
+observed for a DirectX exe only.  On the other hand, the manifest
+contents are evidence that the problems of "DLL Hell" were on the
+minds of the .Net designers, and one would expect a specific error
+message, which there is not.
+
+Hmmm...it occurred to me that not having the "Startup Object" set in
+the Project Properties might be something to check...
+
+
+TODO
+----
+Implement:
+- Partial-tile-offset blitting
+  - And a a method demonstrating "smooth scrolling" at various speeds
+- Blitting tiles at an offset
+  - Blitting  over-sized tile art (ogre)
+  - Blitting under-sized tile art (butterfly)
+
+- Method to take a "screen shot" of the region
+  - Method to produce a sequence of such images, 
+    for each animation frame in the current cycle of such
+    (this method might belong to another class, at a higher level)
+
+- orthogonally-rotated square tiles (0, 90, 180, 270)
+
+- hexagonal tiles (needs some hex tile art, with WE and NS bias/grain)
+- orthogonally-rotate hexagonal tiles (0, 60, 120, 180, 240, 300)
+
+- blitting non-tile things onto the region
+
+- highlighting tile regions (perhaps via the region-outlining marching-ants sprites)
+
+- Applying "special effects", such as
+  - cause the (screen) to shake
+  - cause the (screen) to go inverse video and back
+  - other SFX as they are thought up...
+
+- Blitting elements onto a "Portrait" region (may warrant a new class)
+  - Blitting faces (or furniture) based on composition of parts (needs sample art)
+
+Implemented various helper methods which are pre-requisite to doing
+partial-tile-offset blitting.
+
+
+---------------------------------------------------------------------------
+2010/09/16 (Thu)
+----------
+Added methods to support square-orthogonal rotated tile blitting.
+Blitting mixed rotations of tiles in a grid shows artifacts,
+indicating a bug somewhere.
+
+To implement some of the functionality in the near-term list,
+the time to split Direct3DWidget into multiple classes is coming near.
+The class heirarchy would probably be something like:
+
+Direct3DWidget    // basic Direct3D functionality, very few methods
+    TileViewPort  // adds various tile and viewport -oriented methods
+    ...
+    PixelMiniMap
+    PortraitDisplayer       // presumably more methods for composition...
+    FrontalViewOfFurniture  // likewise...
+    ...etc
+
+Loaded up the GDI+ TileViewPort implementation to study merging the two.
+It seems that the only GDI dependencies are:
+- In TileSheet.cs, in the classes TileSheet and TileSprite,
+  and in TileViewPort.cs, in the class TileViewPort,
+  the following types are used:
+    System.Drawing.Rectangle  // not problematic, used in Direct3D also
+    System.Drawing.Image      // used in all of these (Direct3D uses Texture)
+    System.Drawing.Graphics   // in TileViewPort.OnPaint()
+
+  The critical methods are:
+    // Setup an Image in TileSheet()
+    ts_image = Image.FromFile(fileName)
+
+    // And later, in OnPaint(PaintEventArgs ee)
+    surface  = ee.Graphics
+    surface.DrawImage(ts_image, ...)
+
+- The Direct3D-based tile blitting uses:
+    Microsoft.DirectX.Direct3D = D3D
+    D3D.PresentParameters
+    D3D.Device  (and various other bits such as Matrix and CustomVertex)
+    D3D.Sprite
+    D3D.Texture
+
+  The critical methods are:
+    // Setup various D3D entities:
+    parameters  = new PresentParameters()
+      device    = new D3D.Device(..., parameters)
+        sprite  = new D3D.Sprite(device)
+        texture = D3D.TextureLoader.FromFile(device, filename, ...)
+
+    // And later, in an Application.DoEvents() loop, a rendering call:
+    device.Clear()
+    device.BeginScene()
+      sprite.Begin()
+      sprite.Draw2D(texture, ...)
+      sprite.End()
+    device.EndScene()
+    device.Present()
+
+Sadly, I've not yet found a Direct3D method which will
+  - Initialize a Texture from an Image
+  - Blit onto a Device from an Image rather than a Texture
+Either of these would be convenient, their absence means a few lines
+of code re-written.
+
+
+
+After so much fuss figuring out how to get the DirectX bits to work,
+it is gratifying to see a pattern forming.
+
+Whether to attempt another tile rendering demo in 
+    (SlimDX, OpenGL, Allegro, Mono+Tao[SDL/OpenGL]) 
+in the near future is an open question.
+
+Benefits to continuing with Direct3D alone:
+  - Keep momentum
+  - Polish and add engine features (rotation, animation, screen shots, ...)
+  - Less aggravation (assumes other back-ends are as recalcitrant as DirectX)
+
+Benefits to implementing one or more new rendering back-ends:
+  - Gain more knowledge about how best to make the engine/framework
+    abstracted+independent (which are common parts, which are specific warts)
+  - Possibility that one of these others is "better", such as
+    - Faster
+    - Cleaner API
+    - Better supported API (WWW docs, books, forums, helpful veterans)
+  - Other back-ends are more portable than DirectX
+    (Though apparantly, Wine supports 
+
+
+
+Found the syntax for an indexer within an interface.
+This should be helpful for IGridIterable purposes, for TileViewPort
+and otherwise.
+
+// Answer from http://msdn.microsoft.com/en-us/library/tkyhsw31%28v=VS.90%29.aspx
+public interface ISomeInterfaceWithAnIndexer
+{
+    // Indexer declarations:
+    int this[int index]      { get; set; }
+    int this[int xx, int yy] { get; set; }
+}
+
+
+Some useful bits for manual control of window size and placement:
+int screen_ww = System.Windows.Forms.SystemInformation.VirtualScreen.Width();
+int screen_hh = System.Windows.Forms.SystemInformation.VirtualScreen.Height();
+
+// Useful Control members:
+this.StartPosition = FormStartPosition.Manual;
+this.Location      = new Point(0, 0);
+
+BorderStyle space for a Form is:
+  // TODO: Find out the Form/Control member and enumeration 
+  //       which controls this, and the number of pixels for each...
+  4+4  for left+right
+  30+4 for top+bottom
+
+BorderStyle space for a control is:
+  0 for BorderStyle.None
+  2 for BorderStyle.FixedSingle (1+1 for left+right, or 1+1 for top+bottom)
+  4 for BorderStyle.Fixed3D     (2+2 for left+right, or 2+2 for top+bottom)
+
+
+After poring over both the TileViewPort demo and the D3D Tile Engine demo,
+I concluded that less code need be moved to put the D3D rendering into
+the TileViewPort than vice versa.  Starting that effort...
+
+Copied 'WinForms_display_bitmap.2009.06.23' 
+into 'TileViewPort_plus_Direct3D.2010.09.16' in the directory
+D:\Projects\C_Sharp_stuff\DirectX_tile_engine.2010.09.05\D3D_tile_engine
+
+Some minor refactoring for cleanliness.
+Copied the src and image files over.
+
+Added DirectX-related references:
+    Microsoft.DirectX
+    Microsoft.DirectX.Direct3D
+    Microsoft.DirectX.Direct3DX
+
+...grinding ensues...
+
+Subtle bug 1:
+    Exception for a null Texture value upon first tile blit.
+
+    To get things to work, kludged in both tilesheet classes.
+        (original TileSheet, and Simple_D3D_TileSheet)
+    Each had texture_for_sheet to find the texture.
+    What was wanted was a single, static texture_for_sheet Dictionary,
+    so changed _EVERY_ reference to TileViewPort.texture_for_sheet.
+    A nasty hack, will have to rip it all out later.
+
+Subtle bug 2:
+    All white / all blue tiles were being blitted in the TileViewPort,
+    whereas the Direct3DWidget (left in for comparison) was working
+    fine.  Also, an exception was thrown AFTER program close.
+
+    A nasty mess of setup code in Form1.cs got tangled up,
+    and the TileViewPort 'view' was missing a call to
+    Initialize_Texture_for_TileSheet().
+    Once this was added (and put in _after_ the constructor call, headbang)
+    tiles started to blit like a champ.
+
+
+After much bashing of bits together (and finding a couple of subtle
+bugs), got the TileViewPort to display tiles using Direct3D.  
+Various rough bits remain:
+  A - D3D seems to disable the OnKeyPress input handling,
+      worked around that to show animation via a kludge for now
+
+  B - Some high-numbered terrain tiles (lava at index 77) are displaying
+      wrongly (lava 77 --> ship piece 50).
+      The reason is currently mysterious.
+
+  C - All tiles in the Being layer are displaying wrongly,
+      wizard 33 --> WE bridge 26
+      horse 21 --> black tile ???
+      The reason is currently mysterious.
+      Disabled these entirely for now (to avoid distraction), fix in turn...
+
+  D - All tiles in the UI_Elements layer are displaying as tiles from
+      the main terrain tilesheet.
+      The cause is known -- there needs to be a way to convert 
+          (integer from map) --> (sheet, index)
+      It may be needful to go to the full 
+          ObjectID --> SpriteID --> (sheet, index) 
+      implementation to get this right.
+
+Preliminary tests with low sleep() between frames shows that the
+TileViewPort is BLAZING FAST.  Will test further after bugs are fixed,
+and some of the mess is cleaned up.  I anticipate BLAZING viewport
+scrolling speed, even for large viewports, over large maps.  W00t!
+
+With a clear head tomorrow, I should get it all sorted out.
+
+
+---------------------------------------------------------------------------
+2010/09/17 (Fri)
+----------
+Found the basic of problems B and C, that being that
+Simple_D3D_Tilesheet recorded the sheet width and height in pixels,
+and made the assumption that the entire sheet was used.
+The original TileSheet class however, explicitly set the width and
+height in tiles (allowing unused space on the right and bottom).
+
+This circumstance lead to some kind of mis-interpretation of tile
+indexes.  Adding width/height-in-tiles information to the
+Simple_D3D_Tilesheet constructor immediately fixed problems B and C.
+
+Given the known cause of problem D, I mulled over how best to fix it.
+The most sensible thing seems to be a re-arrangement of how
+information is partitioned between 
+    SimpleMapV1 (and the various IGridIterable implementations), 
+    TileSheet,
+    TileSprite
+
+Currently
+  - SimpleMapV1 stores a TileSheet,
+  - TileSheet stores an Image (a GDI+ type) and an array of TileSprite,
+  - TileSprite stores an Image and a Rectangle
+  - Map data (in MapDenseGridLayer and kin) consists of 
+    arrays of integers, wihch are interpreted as 1-based indexes into
+    a specific TileSheet.  (The difficulty of determining _which_
+    TileSheet producing certain of the current problems.)
+
+hacked onto the side of this,
+  - A static member of TileViewPort holds a dictionary of
+        { Simple_D3D_TileSheet => D3D.Texture }
+
+I have determined that this would be more sensible:
+  - TileSheet and TileSprite are HRAOS entities with ID and tag
+    They may be of a different base class, as they do not require the
+    flexibility of arbitrary added fields (?)
+
+  - TileSheet stores an array of Rectangle (and other dimensions as
+    needed for the blitting call of whatever backend)
+    No Image or Texture data are stored here, as some backends place
+    unusual requirements on such data (see below).
+
+  - TileSprite stores only (sheet_ID, one_based_tile_index)
+
+  - A static member of TileSheet or whatever class holds a dictionary of
+        { TileSheet => D3D.Texture }
+    And/or whatever other sort of image/texture data is needed,
+    for whatever rendering back-end(s) are implemented.
+
+  - Map data (in MapDenseGridLayer and kin) consists of
+    arrays of integers, which are interpreted as Object IDs
+      - Currently, the Object ID of a TileSprite, 
+        which will be consulted directly for rendering
+      - At a later-but-soon time, the Object ID of an arbitrary
+        HRAOS-style object, which will be interrogated 
+        for the Object ID of a TileSprite, for rendering.
+
+Taking this one step at a time.
+Started with some minor cleanups.
+
+Was in the middle of things, ready to start on one of the first major
+refactoring steps, when life attacked.
+
+Spoke with Tommy (we may meet this weekend), and he had some useful
+suggestions regarding the problem where no DirectX .EXE will run on
+the other boxen I have tried.  He also pointed out the useful 
+    (Context menu over a using statement) / 
+        Organize Usings / Remove Unused Usings
+feature of the IDE.  Was able to remove many un-needed 'using'
+statements, and also some assemblies.
+The essentials which remain include:
+    Microsoft.DirectX
+    Microsoft.DirectX.Direct3D
+    Microsoft.DirectX.Direct3DX
+
+Took a look around with SysInternals "Process Explorer" and 
+"Process Monitor".  Neat tools!  Both will be useful, and the latter
+might help diagnose similar problems in future, if I can figure out
+how the event-capturing + filtering works.
+
+Examined the contents of 
+    C:\Windows\assembly\
+on my XP dev box, and on the Vista laptop downstairs.
+
+The results are edifying, in that (various versions of assemblies)
+exist on my box, and NONE of the needful assemblies exist on the
+laptop.  The "DxDiag.exe" utility reports that the laptop has 
+DirectX 11, but strangely, the assemblies are not present.
+
+Found a link for the "Latest DirectX Redist" package
+    http://www.microsoft.com/downloads/en/details.aspx?displaylang=en&FamilyID=3b170b25-abab-4bc3-ae91-50ceb6d8fa8d
+
+Downloaded this, unpacked it, and ran the DXSetup.exe within on the
+downstairs Vista laptop.  Afterwards, the assemblies are present, with
+suitable version numbers.  And the various DirectX demo .exes run!
+
+However, they produce somewhat funky results.  The common factor seems
+to be that tiles blitted via Sprite.Draw2D() are stretched by ~150% in
+both the X and Y dimensions.
+
+Also, one very strange difference, in that the same EXE displays
+different tiles (in the tvp control UI_Elements tiles):
+  - on the Vista laptop (orange-armored adventurer sprite, stretched)
+  - on my XP dev box (red dot / red burst)
+??? Perhaps the factor which produces apparent stretching is causing
+different tile rectangles to be used ???  Very odd.
+
+I gathered assorted info (including screenshots) on the various demos,
+and will use this to find out:
+  - What is the origin of the problem
+  - What is the most appropriate fix
+
+A few basic notes:
+  Vista Laptop
+    1280 x 800 @ 32-bit color 
+    (plus windows fonts at 96dpi, Vista-style dpi stretching, Vista theme)
+    all screenshots: GIMP reports 72x72 ppi
+
+  XP dev box
+    1600 x 1200 @ 32-bit color
+    (fairly plain XP theme, windows fonts at 96 dpi)
+    all screenshots: GIMP reports 72x72 ppi
+
+Note: One more thing to check is to verify if the original GDI+
+TileViewPort demo displays properly, or stretched/otherwise, under Vista...
+
+The screenshots are in:
+    D:\Projects\C_Sharp_stuff\DirectX_tile_engine.2010.09.05\D3D_tile_engine\screen_shots.2010.09.17
+
+Back to the code mines...
+Was refactoring a bit, and then merging / re-implementing TileSheet...
+
+Started off by some member-name refactoring in TileSheet, and cleanup/
+organization of the setup code in Form1.cs.
+
+Noted that Bugs B and C are manifesting again...that is confusing.
+Will fix later, sigh.
+
+Refactored so that Direct3DWidget.cs is no longer in the project.
+Fiddled a bit with the demo map and viewport.
+
+The next major refactoring is to get rid of Simple_D3D_TileSheet,
+by making TileSheet replace it wholly.  That calls for a clear head,
+so I'll leave it for tomorrow.
+
+
+---------------------------------------------------------------------------
+2010/09/18 (Sat)
+----------
+After various delays, refactored Simple_D3D_TileSheet out of the
+picture.  First attempt at running (after all syntax fixed) showed odd
+stretched results.  Noted that the TileSheet values for image
+width/height were never set; corrected this, and BLAM!  All blits
+correctly, including the tiles which had been mis-rendered in 
+Bug B and Bug C!
+
+A quick check to verify blitting speed confirms it is still
+astonishingly fast at 0ms delay.  The comparison to the GDI+
+TileViewPort is most pleasing.
+
+Next up, to get blitting from different tilesheets working.
+(The marquee tilesheet for the UI_Elements layer on the TileViewPort)
+
+This will require that TileSprite and TileSheet be refactored in the
+manner previously determined, changing which stores the Rectangles and
+so forth...
+
+Did a bit of research into why the key handling stopped working.
+The answer turns out to be elementary!
+    Form1.KeyPreview = true;  // Form handles key events before controls do
+Map scrolling with keyboard works now, very exciting!
+
+In the near future, I will need to change the key handling so that 
+key repeat is used, the better to see the speed & feel of manual map
+scrolling. 
+
+Found a bug where ScrollConstraint.EntireMap leads to strange behavior
+when the TileViewPort is larger than the map it is displaying.  Will
+fix this, once I've figured out what the desired behavior is 
+(and under what circumstances it will occur in a GiantVirtualCanvas 
+-based map). 
+
+After a fair bit of refactoring and cleanup, TileSheet and TileSprite
+hold the intended data:
+    TileSheet  has tile_sprites[] and tile_rects[]
+    TileSprite has (sheet,index)
+
+Refactored to allow multiple/arbitrary tile sheets.
+
+Tried it out with the tile_marquee sheet, and noted that transparency
+is not working.  The D3D.TextureLoader.FromFile() call specifies
+0xFF00FF as the color_key, so what is wrong is not immediately clear.
+Fixing this may require a clear head in the morning.
+
+
+---------------------------------------------------------------------------
+2010/09/19 (Sun)
+----------
+After much head-scratching, and dozens of examples looked at, finally
+got Alpha-based transparency for sprites working.
+
+The essentials are:
+    device.RenderState.AlphaBlendEnable = true;
+    ...
+    SpriteFlags flags = SpriteFlags.AlphaBlend;
+    sprite.Begin(flags);
+    ...
+    Color color = Color.White;
+    sprite.Draw2D(texture, src_rect, dest_size, 
+                  tile_rot_center, rot_angle, dest_pos, color);
+
+The problem was that I was using Color.Transparent earlier, which was
+fine with AlphaBlendEnable off (the default), but which means 
+    "everything I blit is 100% transparent" 
+with AlphaBlendEnable on.
+
+Hmmm...I may need to make a brighter marquee border, it seems rather
+dim against the U4 tilesheet tiles.  Or perhaps animating the marching
+ants will be visible enough?  Best to experiment...
+
+Setting up a TileViewPort demo to test on other machines.
+Tried to get the U4 world map into a large csv, this proved awkward.
+Loading the 16x16 "chunks" is a better idea anyways, but that will
+require a few methods to be set up first.
+
+Installed the DirectX materials on Stephen's PC, and the demo ran.
+The textures were stretched, as seen earlier on the Vista laptop.
+It occurs to me that a common factor is the DirectX materials.
+Is it possible that these differ in some way which
+  A - ABI matches enough that compiled EXEs run,
+      including the method call to things such as Sprite.Draw2D()
+  B - but the results differ in regards to how texture loading / sprite
+      blitting works?
+If A, then B would seem unlikely.  Given B, I would have doubted A.
+I will search for another hypothesis first.
+
+One thing to try:
+  - Crop the U4 tilesheet to the size containing tiles, and try it on
+    other boxen, so as to verify that stretch-to-power-of-2-size
+    issues (or related) are not the cause of the stretching which is
+    seen.
+
+Wrote a couple of methods to load an Ultima IV world map chunk 
+(as csv 0-based tile indexes) into a MapDenseGridLayer and a
+SimpleMapV1.  After quite a bit of head-scratching, figured out why
+the display was strangely interleaved -- I had been decoding the
+chunks as 16x16 (as I remembered from the C64 disk sector-based U4
+world map storage), rather than 32x32 (which indeed the Moongates
+Ultima IV Annex documentation correctly described)
+    file:///D:/Projects/C_Sharp_stuff/useful_map_files/tech.asp.htm
+
+Loaded up and displayed chunk 27, which contains Castle Britannia.
+A beautiful sight.
+
+
+---------------------------------------------------------------------------
+2010/09/22 (Wed)
+----------
+Wrote down some more notes on the organization of the ideas of the
+GiantVirtualCanvas.  Began implementation of a class to demonstrate
+simple Composition along X,Y (MapCompositedNonOverlappingLayer).
+
+Resolved a couple bugs related to dictionary key indexing, making all
+(x,y)-->index keys use the same function.
+
+Added an else{} block so that off-canvas tiles can be displayed as
+some specified sprite.  This is found in:
+    TileViewPort.cs render_grid_of_tiles()
+    after the call to to render_single_tile_all_map_layers()
+I envision this will only be used for debug purposes, as the
+background color of the control (often black) is what will normally be
+wanted.
+
+Added a hard-coded return so that on-map tiles on a composited map
+which are not part of any content grid will display a non-null sprite.
+This is found at:
+    MapCompositedNonOverlappingLayer.cs contents_at_XY()
+    the return at the end
+This should be built on a bit, as it relates to the procedural
+generation of maps.  The first step is for a map to provide a 
+"default terrain", rather than this hard-coded return value.
+
+Added a few keybindings to turn on and off N<--> and W<-->E
+auto-scrolling, which makes for a good demo of the possible speed of
+scrolling.
+
+Made a version of the tile-border marquee sprite with brighter
+colors.  In the process, found that two PNG files, both created by
+GIMP and with identical-looking image contents, can produce rather
+different rendering results.  The second file was created via
+Copy+Paste from GIMP, and the resulting image had two "layers" as
+reported by GIMP, with the image contents not in the "Background"
+layer as in the first.  This resulted in the second image not blitting
+with FF00FF transparency, though I don't know more deeply why.
+
+In a related discovery, I took a screenshot of the result after fixing
+that, and noted that the screenshot had markedly different colors for
+the blitted tile-marquee-border sprite.  I tried changing the "filter"
+and "MIP_filter" parameters to D3D.TextureLoader.FromFile(), but this
+did not visibly affect the result.  The colors on other tiles are not
+(to my naked eye) different from the original as displayed in
+IrfanView and GIMP, but now I wonder.
+
+A bit of checking conforms that, indeed, the blitted tiles are getting
+dithered, despite use of D3D.Filter.None vs D3D.Filter.Linear.
+Sigh.  It looks fine on most of the tiles, but surely there is some
+incantation wihch Direct3D will take to not mess with my pixels?
+
+Between the various difficulties in getting started, poor
+documentation (and much trouble in both Google and MSDN in finding
+_relevant_ documentation, drowned out in previous-versions,
+subsequent-versions, other-language-binding-version, and
+changed-the-API-seemingly-without-documentation), the Win32-only
+portability status, and now putting different colored pixels than I
+specified, it is enough to seriously make me consider whether effort
+would be saved by switching to OpenGL (or other open-specification,
+open-source graphics back-end)!
+
+If I run into one more major obstacle with DirectX, prudence dictates
+that I had better start at least a little side-project to investigate
+getting the needful proof-of-concept bits...
+  - Set up a full-screen, and in-window graphics region
+  - Blit a primitive on it
+  - Load a graphics file into memory
+  - Blit a rectangle from that, onto a rectangle of some target
+  - With transparency
+  - Set all this up within a Windows.Forms UserControl
+
+Despite all these distractions, I now have most of the pre-requisites
+to load the Ultima IV world map as 64 32x32 chunks onto a composite
+map.
+
+It occurred to me that a test could be made of what performance impact
+having "thousands" of Rectangles to test against would mean in the
+"naive" implementation (without B-tree type storage).
+
+That test would be:
+    Load the Ultima IV map (256x256) as 65,536 1x1 chunks
+    onto a composite map.
+
+If doing that (which is ridiculous, but produces the number of
+regions, and the number of comparisions in map composition, that a
+more "real" example with many thousands of regions would) does not
+produce any bad effects on performance, then a non-"naive"
+implementation can be delayed indefinitely.
+
+
+
+Split the classes SimpleMapV0.cs into seperate files.  I would move
+the *Layer classes and the interface(s) into a seperate file(s) as
+well, if I could think of a suitable filename.
+
+Refactored the namespace, project and EXE names (for terseness in call
+stack display, etc).
+
+After running into an aggravating bit with 0..63 vs 1..64 chunk
+numbering, success in loading the 256x256 Ultima IV map into a
+composited map!
+
+Need to refactor to remove the max size 256 x 256 limit in
+GridUtility, and to fix the 0..63 kludge.  Might be other subtle
+problems, so I will implement use_sep the better to scrutinize the map
+in detail.
+
+Also need to get key-repeat working on the keybindings, so that the
+map can be explored more easily.  This thing is starting to look like
+something useful, rather than a demo of fiddly concepts!
+
+
+---------------------------------------------------------------------------
+2010/09/24 (Thu)
+----------
+Fixed the "read_u4_world.perl" script to generate filenames 0..63, and
+un-kludged the demo to match.
+
+Finished all (16 tiles x 4 frames) of the new "bright marquee"
+tilesheet.  This started as an onerous and fiddly thing, but I
+realized that the Grid tool in GIMP could be set to good effect.
+Setting the Grid to 4x4 pixel boundaries made editing these tiles 
+(and the other animation frames) simple and fast.  A trick to
+remember.
+
+The next thing to implement would be a display of marquee tiles on
+content_grid borders.  The most elegant implementation which suggests
+itself right now is a method of MapCompositedNonOverlappingLayer which
+takes a TileViewPort argument, and returns a MapDenseGridLayer of the
+same dimensions as the TileViewPort, the contents of which are
+(0 for no marquee tile, spriteID for marquee tile at any tile which is
+a region boundary).
+
+It sounds like this would be more complicated for a composite map
+where overlapping content grids are allowed, but I'll handle that when
+I get to it.
+
+The other next thing to implement (probably after that previous) is to
+support simple tile animation.  For now, water, lava, marquee tiles,
+vehicle/mount tiles, and being tiles have suitable art.  Water and
+lava tiles assumed "wave sprite" animation though, which would need
+seperate implementation.
+
+The notes from the C sprite animation API should be of aid; hopefully
+no new aggravating DirectX misbehaviors will crop up when implementing
+frame animation / wave animation.  (I'm still annoyed about the pixel
+dithering.  I was fairly sure that the arguments I had given specified
+no blending and the like...)
+
+The _other_ other next thing is to implement a display upon mouseover
+(whether as a popup balloon, or into another control) of
+  - The Viewport tile X,Y under the mouse
+  - The Map tile X,Y under the mouse
+  - The relative-to-Viewport-origin pixel X,Y
+  - The relative-to-Form-origin pixel X,Y
+  - The tile contents (of various layers) of the tile under the mouse
+
+Packaging up the current state of things as a demo...
+Created
+    Tile_Eng_Demo.2010.09.23.zip
+
+Uploaded 
+    Tile_Eng_Demo.2010.09.23.zip
+to
+   http://www.4shared.com/dir/4vFtCS0g/Haxima_C_Sharp_stuff.html
+
+The DirectX materials are available in a subfolder there,
+as well as the original Microsoft site.
+
+
+---------------------------------------------------------------------------
+2010/09/26 (Sun)
+----------
+Met with Tommy.  Discussed were the project, also sailing ships,
+sealing wax, cabbages, kings.
+
+We discovered by experiment that the recent total failure of the
+Tile_Eng_Demo.exe to run on the Vista laptop, is associated with the
+D3D.TextureLoader.FromFile() call being made with:
+    usage = Usage.Dymamic;     // rather than 0
+    pool  = D3D.Pool.Default;  // rather than D3D.Pool.Managed
+
+Also, it helps to copy over the correct (changed) exe-containing
+folder to test, sigh.
+
+We discovered by fiddling around with the scaling factor in the
+Tile_Eng_Demo, that scaling at 0.5 produces odd results, with the tile
+textures being blitted seemingly
+  - strangely stretched
+  - possibly not the right tile for the expected terrain
+
+Blitting with scaling at 2.0 produced something like the expected
+result, though this should be checked further.  (It is possible that
+the TileViewPort tile-grid-extent arguments are not interacting as
+expected with the scaling-of-blitted-tiles, as I observed 8x8 tiles
+where I expected 16x16 once.  Something to confirm and investigate.)
+
+Regarding matters of project architecture and the order / methods of
+implementation, Tommy argued vigorously for an approach of the nature:
+  - Test-first, test-driven development (resharper or similar)
+  - Produce stubs of the overall system (many/all levels) first, 
+    then implement until actual things work
+  - Generally top-down, with bottom-up described as less-likely to
+    produce a completed result
+
+In turn, I argued for an approach of the nature:
+  - Small bits of working code first, tests certainly desirable
+  - Avoid stubs rigorously, as the architecture is prone to change and
+    such artifacts are themselves sources of error, after such change
+  - Generally bottom-up (given an initial vision/design which grows
+    progressively more detailed and implemented-as-correct as the
+    system grows), with the converse observed to be less-likely to
+    produce a completed result
+
+It is interesting to consider that our experiences (solo and in
+groups) and presumably our personal inclinations as to method and
+approach, result in such contrasting points of view.
+
+In regards to the question of what portion of the system will be most
+profitable to implement next, the top cantidates seem to be, in no
+particular order:
+  - Switch from DirectX to OpenGL
+  - Implement tile animation (frames and wave sprites),
+    which presumably must include stack-of-tilesheets functionality
+  - Implement the "selected region(s) marquee tiles" UI layer
+
+Getting a small system working, which is a working map editor, seems
+like a good idea.  I am thinking in terms of the "onion" of map
+functionality.
+  Top-level Map class
+    Multiple Object Layers (map layers)
+      Multiple Z-layers
+        Scale Levels
+          Composition on X,Y of large virtual canvas regions
+            Primitive map content containers (DenseGrid, SparseGrid)
+
+At the moment, implementation is:
+  - Primitive map containers done
+    Additional functionality / methods may be added if a need is seen.
+
+  - Composition on X,Y partial
+    Only non-overlapping content grids are supported,
+    no "rendering order" is supported
+    Additional needful functionality may well be discovered.
+
+  - Multiple map object layers partial
+    The main lack is HRAOS integration, and the definition of
+    Archetype / Object types for Terrain, Beings, etc.
+    Additional needful functionality may well be discovered.
+
+Thus, the following aspects of Map functionality still await:
+  - Scale Levels
+  - Multiple Z-layers
+  - All but the merest rudiments of procedural generation
+    (currently, even "default terrain" is a hard-coded exception,
+    rather than a completed thing).
+
+The difficulties with DirectX and deployment to other PCs (and the
+non-portability of DirectX to Linux+Mono, and to Macintosh+Mono)
+present a strong reason to switch to OpenGL, and doing so will precede
+any additional graphics functionality such as
+  - Special FX
+  - all but simple / obvious / needful bug-fixes
+
+
+---------------------------------------------------------------------------
+2010/10/12
+----------
+After much thought upon how the "onion layers" should fit together, I
+realized that the two "layer" components (Z levels, Object Layers)
+factor out nicely, as most code will only want to deal with a single
+2-dimensional slice at a time.
+
+That means that 
+    - Complete implementation of XY Composition (with overlapping)
+    - Implement Scale Levels
+are the proximate tasks, and the only ones of notable complexity.
+
+(Deferring the OpenGL port until a bit later, though that will precede
+implementing animated tiles and SFX.)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---------------------------------------------------------------------------
